@@ -1,0 +1,617 @@
+{
+  "name": "ARC-01 Core Intake Loop",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "arc/intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "w1",
+      "name": "Arc Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $json.body ?? $json;\nconst text = b.text || b.raw_text || (b.zip_manifest ? JSON.stringify(b.zip_manifest) : '') || '';\nconst category = (b.category || '').toLowerCase();\nlet itemType = b.item_type || (category === 'ideas' || category === 'idea' ? 'idea' : category === 'code' ? 'code' : category === 'apps' || category === 'app' ? 'app' : category === 'research' ? 'research' : category === 'photos' || category === 'photo' ? 'photo' : category === 'screenshots' || category === 'screenshot' ? 'screenshot' : category === 'documents' || category === 'document' ? 'document' : category === 'outreach' || category === 'prospects' ? 'outreach' : 'unknown');\nconst title = b.title || b.filename || (text ? text.slice(0,120).replace(/\\s+/g,' ') : 'Untitled Arc item');\nconst metadata = {...b};\ndelete metadata.binary_base64;\nreturn [{json:{source:b.source||'webhook',source_ref:b.source_ref||b.message_id||null,item_type:itemType,title,raw_text:text,project_hint:b.project_hint||null,content_sha256:b.sha256||null,chat_id:b.chat_id||null,user_id:b.user_id||null,username:b.username||null,binary_base64:b.binary_base64||null,metadata}}];"
+      },
+      "id": "n1",
+      "name": "Normalize Intake",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO arc.items(source,source_ref,item_type,title,raw_text,project_key,status,metadata,content_sha256)\nVALUES ($1,$2,$3,$4,$5,$6,'triaged',$7::jsonb,$8)\nON CONFLICT (source, content_sha256) WHERE content_sha256 IS NOT NULL\nDO UPDATE SET updated_at=now()\nRETURNING id,source,item_type,title,raw_text,project_key,status,metadata;",
+        "options": {
+          "queryReplacement": "={{ [$json.source, $json.source_ref, $json.item_type, $json.title, $json.raw_text, $json.project_hint, JSON.stringify($json.metadata), $json.content_sha256] }}"
+        }
+      },
+      "id": "p1",
+      "name": "Create Arc Item",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT agent_key, model_role, prompt FROM arc.agents WHERE agent_key='scout' AND enabled=true;",
+        "options": {}
+      },
+      "id": "ps",
+      "name": "Get Scout",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -460,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:11434/api/tags",
+        "options": {}
+      },
+      "id": "tags",
+      "name": "Get Ollama Tags",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const names=($json.models||[]).map(m=>m.name); const first=names[0]||null; return [{json:{all:names,fast:first,main:first,reasoner:first,warning:names.length?null:'No Ollama models returned'}}];"
+      },
+      "id": "mr",
+      "name": "Resolve Models",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {model:($node['Normalize Intake'].json.binary_base64 ? $node['Resolve Models'].json.main : $node['Resolve Models'].json.fast),stream:false,format:'json',messages:[{role:'system',content:$node['Get Scout'].json.prompt},{role:'user',content:JSON.stringify({item:$node['Create Arc Item'].json,portfolio:$node['Get Portfolio'].json.portfolio,memory_context:$node['Search MemPalace'].json.stdout||''}),...($node['Normalize Intake'].json.binary_base64 ? {images:[$node['Normalize Intake'].json.binary_base64]} : {})}]} }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "ls",
+      "name": "Run Scout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.message?.content ?? $json.response ?? $json;\nlet parsed;\ntry { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { parsed = {parse_error:e.message, raw:String(raw)}; }\nreturn [{json:{...parsed, _raw: raw}}];"
+      },
+      "id": "xs",
+      "name": "Parse Scout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT agent_key, model_role, prompt FROM arc.agents WHERE agent_key='critic' AND enabled=true;",
+        "options": {}
+      },
+      "id": "pc",
+      "name": "Get Critic",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        680,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {model:$node['Resolve Models'].json.reasoner,stream:false,format:'json',messages:[{role:'system',content:$node['Get Critic'].json.prompt},{role:'user',content:JSON.stringify({item:$node['Create Arc Item'].json,project:$node['Get Project Policy'].json.project,scout:$node['Parse Scout'].json,memory_context:$node['Search MemPalace'].json.stdout||''})}]} }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "lc",
+      "name": "Run Critic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.message?.content ?? $json.response ?? $json;\nlet parsed;\ntry { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { parsed = {parse_error:e.message, raw:String(raw)}; }\nreturn [{json:{...parsed, _raw: raw}}];"
+      },
+      "id": "xc",
+      "name": "Parse Critic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT agent_key, model_role, prompt FROM arc.agents WHERE agent_key='architect' AND enabled=true;",
+        "options": {}
+      },
+      "id": "pa",
+      "name": "Get Architect",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1340,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {model:$node['Resolve Models'].json.main,stream:false,format:'json',messages:[{role:'system',content:$node['Get Architect'].json.prompt},{role:'user',content:JSON.stringify({item:$node['Create Arc Item'].json,project:$node['Get Project Policy'].json.project,scout:$node['Parse Scout'].json,critic:$node['Parse Critic'].json,memory_context:$node['Search MemPalace'].json.stdout||''})}]} }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "la",
+      "name": "Run Architect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.message?.content ?? $json.response ?? $json;\nlet parsed;\ntry { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { parsed = {parse_error:e.message, raw:String(raw)}; }\nreturn [{json:{...parsed, _raw: raw}}];"
+      },
+      "id": "xa",
+      "name": "Parse Architect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json:{item_id:$node['Create Arc Item'].json.id,scout:$node['Parse Scout'].json,critic:$node['Parse Critic'].json,architect:$node['Parse Architect'].json,status:'proposal_ready'}}];"
+      },
+      "id": "bundle",
+      "name": "Bundle Proposal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE arc.items SET status='proposal_ready', project_key=$2, proposal=$3::jsonb WHERE id=$1::uuid RETURNING id,title,status,project_key,proposal;",
+        "options": {
+          "queryReplacement": "={{ [$json.item_id, $json.scout.project_key || null, JSON.stringify({scout:$json.scout,critic:$json.critic,architect:$json.architect})] }}"
+        }
+      },
+      "id": "pu",
+      "name": "Store Proposal",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:true,item_id:$json.id,status:$json.status,proposal:$json.proposal} }}",
+        "options": {}
+      },
+      "id": "resp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO arc.runs(item_id,agent_key,model_role,model_name,stage,status,input,output,finished_at) VALUES ($1::uuid,'scout','fast',$2,'triage','complete',$3::jsonb,$4::jsonb,now()) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$node['Create Arc Item'].json.id, ($node['Normalize Intake'].json.binary_base64 ? $node['Resolve Models'].json.main : $node['Resolve Models'].json.fast), JSON.stringify($node['Create Arc Item'].json), JSON.stringify($node['Parse Scout'].json)] }}"
+        }
+      },
+      "id": "logs",
+      "name": "Log Scout Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        450,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO arc.runs(item_id,agent_key,model_role,model_name,stage,status,input,output,finished_at) VALUES ($1::uuid,'critic','reasoner',$2,'critique','complete',$3::jsonb,$4::jsonb,now()) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$node['Create Arc Item'].json.id, $node['Resolve Models'].json.reasoner, JSON.stringify({item:$node['Create Arc Item'].json,scout:$node['Parse Scout'].json}), JSON.stringify($node['Parse Critic'].json)] }}"
+        }
+      },
+      "id": "logc",
+      "name": "Log Critic Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1130,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO arc.runs(item_id,agent_key,model_role,model_name,stage,status,input,output,finished_at) VALUES ($1::uuid,'architect','main',$2,'architecture','complete',$3::jsonb,$4::jsonb,now()) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$node['Create Arc Item'].json.id, $node['Resolve Models'].json.main, JSON.stringify({item:$node['Create Arc Item'].json,scout:$node['Parse Scout'].json,critic:$node['Parse Critic'].json}), JSON.stringify($node['Parse Architect'].json)] }}"
+        }
+      },
+      "id": "loga",
+      "name": "Log Architect Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1810,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(jsonb_agg(jsonb_build_object('project_key',project_key,'display_name',display_name,'priority_weight',priority_weight,'lifecycle',lifecycle,'objective',objective,'policy',policy) ORDER BY priority_weight DESC),'[]'::jsonb) AS portfolio FROM arc.projects WHERE lifecycle IN ('active','parked');",
+        "options": {}
+      },
+      "id": "pp1",
+      "name": "Get Portfolio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -560,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'http://host.docker.internal:8787/api/memory/search?q=' + encodeURIComponent(($node['Create Arc Item'].json.title||'') + ' ' + (($node['Create Arc Item'].json.raw_text||'').slice(0,1200))) }}",
+        "options": {
+          "timeout": 50000
+        }
+      },
+      "id": "mem1",
+      "name": "Search MemPalace",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        -180
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT jsonb_build_object('project_key',project_key,'display_name',display_name,'priority_weight',priority_weight,'objective',objective,'policy',policy,'metadata',metadata) FROM arc.projects WHERE project_key=$1),'{}'::jsonb) AS project;",
+        "options": {
+          "queryReplacement": "={{ [$node['Parse Scout'].json.project_key || ''] }}"
+        }
+      },
+      "id": "pp2",
+      "name": "Get Project Policy",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        620,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Arc Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Intake": {
+      "main": [
+        [
+          {
+            "node": "Create Arc Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Arc Item": {
+      "main": [
+        [
+          {
+            "node": "Get Portfolio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Scout": {
+      "main": [
+        [
+          {
+            "node": "Get Ollama Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Ollama Tags": {
+      "main": [
+        [
+          {
+            "node": "Resolve Models",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Models": {
+      "main": [
+        [
+          {
+            "node": "Run Scout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Scout": {
+      "main": [
+        [
+          {
+            "node": "Parse Scout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Scout": {
+      "main": [
+        [
+          {
+            "node": "Log Scout Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Scout Run": {
+      "main": [
+        [
+          {
+            "node": "Get Project Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Critic": {
+      "main": [
+        [
+          {
+            "node": "Run Critic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Critic": {
+      "main": [
+        [
+          {
+            "node": "Parse Critic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Critic": {
+      "main": [
+        [
+          {
+            "node": "Log Critic Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Critic Run": {
+      "main": [
+        [
+          {
+            "node": "Get Architect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Architect": {
+      "main": [
+        [
+          {
+            "node": "Run Architect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Architect": {
+      "main": [
+        [
+          {
+            "node": "Parse Architect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Architect": {
+      "main": [
+        [
+          {
+            "node": "Log Architect Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Architect Run": {
+      "main": [
+        [
+          {
+            "node": "Bundle Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bundle Proposal": {
+      "main": [
+        [
+          {
+            "node": "Store Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Proposal": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Portfolio": {
+      "main": [
+        [
+          {
+            "node": "Search MemPalace",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search MemPalace": {
+      "main": [
+        [
+          {
+            "node": "Get Scout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Project Policy": {
+      "main": [
+        [
+          {
+            "node": "Get Critic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "id": "arcbcb7e5c95aa46"
+}

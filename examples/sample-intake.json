@@ -1,0 +1,8 @@
+{
+  "source": "example",
+  "source_ref": "docs/sample-intake",
+  "item_type": "idea",
+  "title": "Automate weekly research triage",
+  "text": "Collect my approved sources once a week, summarize only meaningful changes, and prepare a review queue.",
+  "project_hint": "primary_project"
+}

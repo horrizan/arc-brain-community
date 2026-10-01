@@ -1,0 +1,18 @@
+# Optional future central routing through LiteLLM.
+# Replace the model names below with the exact output of `ollama list`.
+# Do not enable this merely to avoid direct Ollama calls; v0.1 intentionally stays simple.
+model_list:
+  - model_name: arc-fast
+    litellm_params:
+      model: ollama/REPLACE_WITH_FAST_LLAMA_TAG
+      api_base: http://host.docker.internal:11434
+
+  - model_name: arc-main
+    litellm_params:
+      model: ollama/REPLACE_WITH_QWEN3_TAG
+      api_base: http://host.docker.internal:11434
+
+  - model_name: arc-reasoner
+    litellm_params:
+      model: ollama/REPLACE_WITH_DEEPSEEK_R1_TAG
+      api_base: http://host.docker.internal:11434

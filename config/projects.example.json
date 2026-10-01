@@ -1,0 +1,92 @@
+{
+  "projects": [
+    {
+      "project_key": "primary_project",
+      "display_name": "My Primary Project",
+      "priority_weight": 100,
+      "lifecycle": "active",
+      "objective": "The main project or business that should receive attention first.",
+      "policy": "Protect delivery cadence. Research, automation and tooling should directly support useful output, growth, revenue or reliability. Do not let infrastructure work displace the primary project's real deliverables.",
+      "aliases": [
+        "primary",
+        "primary project",
+        "project one",
+        "p1"
+      ],
+      "telegram_prefixes": [
+        "/p1 ",
+        "p1:"
+      ],
+      "folders": [
+        "Ideas",
+        "Research",
+        "Outreach",
+        "Sources",
+        "Documents"
+      ],
+      "metadata": {
+        "rank": 1,
+        "example": true
+      },
+      "folder_name": "Primary Project"
+    },
+    {
+      "project_key": "secondary_project",
+      "display_name": "My Secondary Project",
+      "priority_weight": 80,
+      "lifecycle": "active",
+      "objective": "The second project or business priority.",
+      "policy": "Support the project without displacing the primary project's critical work. Prefer reusable research, outreach and automation patterns.",
+      "aliases": [
+        "secondary",
+        "secondary project",
+        "project two",
+        "p2"
+      ],
+      "telegram_prefixes": [
+        "/p2 ",
+        "p2:"
+      ],
+      "folders": [
+        "Ideas",
+        "Research",
+        "Outreach",
+        "Documents"
+      ],
+      "metadata": {
+        "rank": 2,
+        "example": true
+      },
+      "folder_name": "Secondary Project"
+    },
+    {
+      "project_key": "arc_brain",
+      "display_name": "Arc Brain",
+      "priority_weight": 50,
+      "lifecycle": "active",
+      "objective": "Maintain and improve the automation platform when doing so removes real work from active projects.",
+      "policy": "Avoid agent-framework churn. Prefer boring, inspectable components and improvements proven by real use.",
+      "aliases": [
+        "arc",
+        "arc brain",
+        "arc_brain"
+      ],
+      "telegram_prefixes": [
+        "/arc ",
+        "arc:"
+      ],
+      "folders": [
+        "Ideas",
+        "Code",
+        "Apps",
+        "Research"
+      ],
+      "metadata": {
+        "rank": 3,
+        "type": "platform",
+        "example": true
+      },
+      "folder_name": "Arc Brain"
+    }
+  ]
+}

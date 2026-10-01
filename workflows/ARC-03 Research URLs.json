@@ -1,0 +1,370 @@
+{
+  "name": "ARC-03 Research URLs",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "arc/research",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "rw",
+      "name": "Research Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body ?? $json; const urls=Array.isArray(b.urls)?b.urls:(b.url?[b.url]:[]); if(!b.question) throw new Error('question is required'); return [{json:{item_id:b.item_id||'',project_key:b.project_key||null,question:b.question,urls:urls.slice(0,12)}}];"
+      },
+      "id": "rn",
+      "name": "Normalize Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO arc.research_tasks(item_id,project_key,question,source_urls,status) VALUES (NULLIF($1,'')::uuid,$2,$3,$4::jsonb,'running') RETURNING id,item_id,project_key,question,source_urls,status;",
+        "options": {
+          "queryReplacement": "={{ [$json.item_id,$json.project_key,$json.question,JSON.stringify($json.urls)] }}"
+        }
+      },
+      "id": "rdb",
+      "name": "Create Research Task",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const task=$json; const urls=task.source_urls||[]; if(!urls.length) return [{json:{task_id:task.id,item_id:task.item_id,project_key:task.project_key,question:task.question,url:null,no_urls:true}}]; return urls.map(url=>({json:{task_id:task.id,item_id:task.item_id,project_key:task.project_key,question:task.question,url}}));"
+      },
+      "id": "rex",
+      "name": "Expand URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.no_urls ? 'http://host.docker.internal:8787/health' : 'http://host.docker.internal:8787/api/research/fetch?url=' + encodeURIComponent($json.url) }}",
+        "options": {
+          "timeout": 40000
+        }
+      },
+      "id": "rf",
+      "name": "Fetch Evidence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -300,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const fetched=$input.all().map(x=>x.json); const src=$node['Expand URLs'].json; return [{json:{task_id:src.task_id,item_id:src.item_id,project_key:src.project_key,question:src.question,evidence:fetched}}];"
+      },
+      "id": "rag",
+      "name": "Aggregate Evidence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT jsonb_build_object('project_key',project_key,'display_name',display_name,'priority_weight',priority_weight,'objective',objective,'policy',policy) FROM arc.projects WHERE project_key=$1),'{}'::jsonb) AS project;",
+        "options": {
+          "queryReplacement": "={{ [$json.project_key || ''] }}"
+        }
+      },
+      "id": "rp",
+      "name": "Get Project Policy",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT agent_key,model_role,prompt FROM arc.agents WHERE agent_key='researcher' AND enabled=true;",
+        "options": {}
+      },
+      "id": "ra",
+      "name": "Get Researcher",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:11434/api/tags",
+        "options": {}
+      },
+      "id": "rt",
+      "name": "Get Ollama Tags",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const names=($json.models||[]).map(m=>m.name); return [{json:{reasoner:names[0]||null,all:names}}];"
+      },
+      "id": "rrm",
+      "name": "Resolve Reasoner",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {model:$node['Resolve Reasoner'].json.reasoner,stream:false,format:'json',messages:[{role:'system',content:$node['Get Researcher'].json.prompt},{role:'user',content:JSON.stringify({project:$node['Get Project Policy'].json.project,question:$node['Aggregate Evidence'].json.question,evidence:$node['Aggregate Evidence'].json.evidence})}]} }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "rr",
+      "name": "Run Researcher",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw=$json.message?.content ?? $json.response ?? $json; let parsed; try{parsed=typeof raw==='string'?JSON.parse(raw):raw}catch(e){parsed={parse_error:e.message,raw:String(raw)}} return [{json:{...parsed,_raw:raw}}];"
+      },
+      "id": "rx",
+      "name": "Parse Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE arc.research_tasks SET status='complete',findings=$2::jsonb WHERE id=$1::uuid RETURNING id,item_id,project_key,question,status,findings,updated_at;",
+        "options": {
+          "queryReplacement": "={{ [$node['Aggregate Evidence'].json.task_id,JSON.stringify($node['Parse Research'].json)] }}"
+        }
+      },
+      "id": "rus",
+      "name": "Store Research",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1340,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:true,research:$json} }}",
+        "options": {}
+      },
+      "id": "rresp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1560,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Research Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Research": {
+      "main": [
+        [
+          {
+            "node": "Create Research Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Research Task": {
+      "main": [
+        [
+          {
+            "node": "Expand URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand URLs": {
+      "main": [
+        [
+          {
+            "node": "Fetch Evidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Evidence": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Evidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Evidence": {
+      "main": [
+        [
+          {
+            "node": "Get Project Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Project Policy": {
+      "main": [
+        [
+          {
+            "node": "Get Researcher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Researcher": {
+      "main": [
+        [
+          {
+            "node": "Get Ollama Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Ollama Tags": {
+      "main": [
+        [
+          {
+            "node": "Resolve Reasoner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Reasoner": {
+      "main": [
+        [
+          {
+            "node": "Run Researcher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Researcher": {
+      "main": [
+        [
+          {
+            "node": "Parse Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Research": {
+      "main": [
+        [
+          {
+            "node": "Store Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Research": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "id": "arc1a38136dd6a5a"
+}

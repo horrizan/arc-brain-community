@@ -1,0 +1,44 @@
+# Secrets / machine-local configuration
+.env
+.env.*
+!.env.example
+config/projects.json
+local/
+private/
+
+# Generated runtime state
+runtime/*
+!runtime/.gitkeep
+*.sqlite3
+*.sqlite
+*.db
+*.log
+logs/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+
+# n8n / exports / credentials
+credentials*.json
+*n8n*backup*/
+exports/
+
+# Data / memories / user content
+Inbox/
+MemPalace/
+mempalace/
+*.chroma/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node
+node_modules/

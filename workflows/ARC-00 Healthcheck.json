@@ -1,0 +1,73 @@
+{
+  "name": "ARC-00 Healthcheck",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "m1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:11434/api/tags",
+        "options": {}
+      },
+      "id": "h1",
+      "name": "Get Ollama Tags",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const names=($json.models||[]).map(m=>m.name); const first=names[0]||null; return [{json:{ollama_ok:names.length>0,models:names,fast:first,main:first,reasoner:first,warning:names.length?null:'No Ollama models returned'}}];"
+      },
+      "id": "c1",
+      "name": "Resolve Model Roles",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Ollama Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Ollama Tags": {
+      "main": [
+        [
+          {
+            "node": "Resolve Model Roles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "id": "arc6e9ee9752f9f4"
+}

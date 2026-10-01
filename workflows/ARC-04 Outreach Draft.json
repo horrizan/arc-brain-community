@@ -1,0 +1,265 @@
+{
+  "name": "ARC-04 Outreach Draft",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "arc/outreach/draft",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ow",
+      "name": "Outreach Draft Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body ?? $json;\nif(!b.project_key) throw new Error('project_key is required');\nreturn [{json:{project_key:b.project_key,item_id:b.item_id||'',recipient_name:b.recipient_name||'',recipient_email:b.recipient_email||'',organization:b.organization||'',channel:b.channel||'email',reason_to_contact:b.reason_to_contact||'',source_context:b.source_context||{},notes:b.notes||''}}];"
+      },
+      "id": "on",
+      "name": "Normalize Outreach",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT jsonb_build_object('project_key',project_key,'display_name',display_name,'priority_weight',priority_weight,'objective',objective,'policy',policy,'metadata',metadata) FROM arc.projects WHERE project_key=$1),'{}'::jsonb) AS project;",
+        "options": {
+          "queryReplacement": "={{ [$node['Normalize Outreach'].json.project_key] }}"
+        }
+      },
+      "id": "op",
+      "name": "Get Project Policy",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT agent_key,model_role,prompt FROM arc.agents WHERE agent_key='outreach' AND enabled=true;",
+        "options": {}
+      },
+      "id": "oa",
+      "name": "Get Outreach Agent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:11434/api/tags",
+        "options": {}
+      },
+      "id": "ot",
+      "name": "Get Ollama Tags",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const names=($json.models||[]).map(m=>m.name); return [{json:{main:names[0]||null,all:names}}];"
+      },
+      "id": "om",
+      "name": "Resolve Main Model",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {model:$node['Resolve Main Model'].json.main,stream:false,format:'json',messages:[{role:'system',content:$node['Get Outreach Agent'].json.prompt},{role:'user',content:JSON.stringify({project:$node['Get Project Policy'].json.project,target:$node['Normalize Outreach'].json})}]} }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "or",
+      "name": "Run Outreach Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw=$json.message?.content ?? $json.response ?? $json; let parsed; try{parsed=typeof raw==='string'?JSON.parse(raw):raw}catch(e){parsed={parse_error:e.message,raw:String(raw)}} return [{json:{...parsed,_raw:raw}}];"
+      },
+      "id": "ox",
+      "name": "Parse Outreach",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO arc.outreach(project_key,item_id,recipient_name,recipient_email,organization,channel,reason_to_contact,source_context,subject,draft_body,status,approval_required) VALUES ($1,NULLIF($2,'')::uuid,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,'needs_approval',true) RETURNING id,project_key,recipient_name,recipient_email,organization,subject,draft_body,status,created_at;",
+        "options": {
+          "queryReplacement": "={{ [$node['Normalize Outreach'].json.project_key,$node['Normalize Outreach'].json.item_id,$node['Normalize Outreach'].json.recipient_name,$node['Normalize Outreach'].json.recipient_email,$node['Normalize Outreach'].json.organization,$node['Normalize Outreach'].json.channel,$node['Normalize Outreach'].json.reason_to_contact,JSON.stringify($node['Normalize Outreach'].json.source_context),$node['Parse Outreach'].json.subject||'', $node['Parse Outreach'].json.draft||''] }}"
+        }
+      },
+      "id": "os",
+      "name": "Store Draft",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:true,outreach:$json} }}",
+        "options": {}
+      },
+      "id": "oresp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        980,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Outreach Draft Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Outreach": {
+      "main": [
+        [
+          {
+            "node": "Get Project Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Project Policy": {
+      "main": [
+        [
+          {
+            "node": "Get Outreach Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Outreach Agent": {
+      "main": [
+        [
+          {
+            "node": "Get Ollama Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Ollama Tags": {
+      "main": [
+        [
+          {
+            "node": "Resolve Main Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Main Model": {
+      "main": [
+        [
+          {
+            "node": "Run Outreach Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Outreach Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Outreach": {
+      "main": [
+        [
+          {
+            "node": "Store Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Draft": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "id": "arc960e72849dfbf"
+}

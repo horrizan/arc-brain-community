@@ -1,0 +1,203 @@
+{
+  "name": "ARC-02 Telegram Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "arc/telegram",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "tw",
+      "name": "Telegram Gateway Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body ?? $json;\nif (b.event_type==='callback') {\n  const parts=(b.callback_data||'').split(':');\n  const action=parts[0]==='arc' ? parts[2] : b.callback_data;\n  const item_id=parts[0]==='arc' ? parts[1] : null;\n  return [{json:{branch:'callback',action,item_id,chat_id:b.chat_id,user_id:b.user_id,callback_query_id:b.callback_query_id}}];\n}\nreturn [{json:{branch:'message',chat_id:b.chat_id,user_id:b.user_id,username:b.username,text:b.text||'',project_hint:b.project_hint||null,binary_base64:b.binary_base64||null,metadata:b}}];"
+      },
+      "id": "tn",
+      "name": "Normalize Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond",
+              "leftValue": "={{ $json.branch }}",
+              "rightValue": "callback",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if1",
+      "name": "Is Callback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH changed AS (UPDATE arc.items SET status = CASE $2 WHEN 'build' THEN 'approved_build' WHEN 'research' THEN 'research_requested' WHEN 'modify' THEN 'needs_modification' WHEN 'park' THEN 'parked' WHEN 'kill' THEN 'killed' ELSE status END WHERE id=$1::uuid RETURNING id,title,status) INSERT INTO arc.approvals(item_id,requested_action,status,decided_at,decided_by,payload) SELECT id,$2,'decided',now(),$3,jsonb_build_object('source','telegram') FROM changed RETURNING item_id,requested_action,status;",
+        "options": {
+          "queryReplacement": "={{ [$json.item_id, $json.action, String($json.user_id)] }}"
+        }
+      },
+      "id": "tap",
+      "name": "Apply Approval",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -260,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5678/webhook/arc/intake",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {source:'telegram',source_ref:String($json.metadata.message_id||''),item_type:'idea',title:($json.text||'Telegram item').slice(0,120),text:$json.text,project_hint:$json.project_hint,chat_id:$json.chat_id,user_id:$json.user_id,username:$json.username,binary_base64:$json.binary_base64,telegram:$json.metadata} }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "callcore",
+      "name": "Call Core Intake",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -260,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:true,branch:'callback',result:$json} }}",
+        "options": {}
+      },
+      "id": "r1",
+      "name": "Respond Callback",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        20,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:true,branch:'message',result:$json} }}",
+        "options": {}
+      },
+      "id": "r2",
+      "name": "Respond Message",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        20,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram Gateway Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Telegram": {
+      "main": [
+        [
+          {
+            "node": "Is Callback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Callback?": {
+      "main": [
+        [
+          {
+            "node": "Apply Approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call Core Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Approval": {
+      "main": [
+        [
+          {
+            "node": "Respond Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Core Intake": {
+      "main": [
+        [
+          {
+            "node": "Respond Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "id": "arc2b061a9722225"
+}

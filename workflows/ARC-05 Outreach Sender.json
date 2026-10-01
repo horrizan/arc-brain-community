@@ -1,0 +1,187 @@
+{
+  "name": "ARC-05 Outreach Sender",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "st",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT (value #>> '{}')::boolean FROM arc.settings WHERE key='outreach_send_enabled'),false) AS enabled, COALESCE((SELECT value #>> '{}' FROM arc.settings WHERE key='smtp_from'),'') AS smtp_from;",
+        "options": {}
+      },
+      "id": "flag",
+      "name": "Get Send Flag",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "enabled",
+              "leftValue": "={{ $json.enabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "iff",
+      "name": "Sending Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id,project_key,recipient_name,recipient_email,organization,subject,draft_body FROM arc.outreach WHERE status='approved' AND recipient_email IS NOT NULL AND recipient_email<>'' ORDER BY created_at ASC LIMIT 5;",
+        "options": {}
+      },
+      "id": "get",
+      "name": "Get Approved Drafts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -80,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $node['Get Send Flag'].json.smtp_from }}",
+        "toEmail": "={{ $json.recipient_email }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.draft_body }}",
+        "options": {}
+      },
+      "id": "send",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE arc.outreach SET status='sent',sent_at=now(),send_result=jsonb_build_object('transport','smtp','workflow','ARC-05') WHERE id=$1::uuid RETURNING id,status,sent_at;",
+        "options": {
+          "queryReplacement": "={{ [$node['Get Approved Drafts'].json.id] }}"
+        }
+      },
+      "id": "mark",
+      "name": "Mark Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        -120
+      ]
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Send Flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Send Flag": {
+      "main": [
+        [
+          {
+            "node": "Sending Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sending Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Get Approved Drafts": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Mark Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "id": "arc8e9a0ad69bb84"
+}

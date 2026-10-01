@@ -1,0 +1,293 @@
+{
+  "name": "ARC-06 Code-App Review",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "arc/code-review",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "cw",
+      "name": "Code Review Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body ?? $json; if(!b.item_id) throw new Error('item_id is required'); return [{json:{item_id:b.item_id}}];"
+      },
+      "id": "cn",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id,item_type,title,raw_text,project_key,status,proposal,metadata FROM arc.items WHERE id=$1::uuid;",
+        "options": {
+          "queryReplacement": "={{ [$json.item_id] }}"
+        }
+      },
+      "id": "ci",
+      "name": "Get Arc Item",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT jsonb_build_object('project_key',project_key,'display_name',display_name,'objective',objective,'policy',policy) FROM arc.projects WHERE project_key=$1),'{}'::jsonb) AS project;",
+        "options": {
+          "queryReplacement": "={{ [$node['Get Arc Item'].json.project_key || ''] }}"
+        }
+      },
+      "id": "cp",
+      "name": "Get Project Policy",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT agent_key,model_role,prompt FROM arc.agents WHERE agent_key='security-reviewer' AND enabled=true;",
+        "options": {}
+      },
+      "id": "ca",
+      "name": "Get Security Reviewer",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:11434/api/tags",
+        "options": {}
+      },
+      "id": "ct",
+      "name": "Get Ollama Tags",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const names=($json.models||[]).map(m=>m.name); return [{json:{reasoner:names[0]||null,all:names}}];"
+      },
+      "id": "cm",
+      "name": "Resolve Reasoner",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {model:$node['Resolve Reasoner'].json.reasoner,stream:false,format:'json',messages:[{role:'system',content:$node['Get Security Reviewer'].json.prompt},{role:'user',content:JSON.stringify({project:$node['Get Project Policy'].json.project,item:{...$node['Get Arc Item'].json,raw_text:($node['Get Arc Item'].json.raw_text||'').slice(0,60000)}})}]} }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "cr",
+      "name": "Run Security Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw=$json.message?.content ?? $json.response ?? $json; let parsed; try{parsed=typeof raw==='string'?JSON.parse(raw):raw}catch(e){parsed={parse_error:e.message,raw:String(raw)}} return [{json:{...parsed,_raw:raw}}];"
+      },
+      "id": "cx",
+      "name": "Parse Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH updated AS (UPDATE arc.items SET metadata=jsonb_set(metadata,'{security_review}',$2::jsonb,true) WHERE id=$1::uuid RETURNING id,title,item_type,project_key,status,metadata) INSERT INTO arc.events(item_id,event_type,actor,payload) SELECT id,'security_review','security-reviewer',$2::jsonb FROM updated RETURNING item_id,payload;",
+        "options": {
+          "queryReplacement": "={{ [$node['Get Arc Item'].json.id,JSON.stringify($node['Parse Review'].json)] }}"
+        }
+      },
+      "id": "cs",
+      "name": "Store Review",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:true,item_id:$json.item_id,security_review:$json.payload} }}",
+        "options": {}
+      },
+      "id": "cresp",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1180,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Code Review Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Get Arc Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Arc Item": {
+      "main": [
+        [
+          {
+            "node": "Get Project Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Project Policy": {
+      "main": [
+        [
+          {
+            "node": "Get Security Reviewer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Security Reviewer": {
+      "main": [
+        [
+          {
+            "node": "Get Ollama Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Ollama Tags": {
+      "main": [
+        [
+          {
+            "node": "Resolve Reasoner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Reasoner": {
+      "main": [
+        [
+          {
+            "node": "Run Security Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Security Review": {
+      "main": [
+        [
+          {
+            "node": "Parse Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Review": {
+      "main": [
+        [
+          {
+            "node": "Store Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Review": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "id": "arcbcf10a26311ba"
+}
