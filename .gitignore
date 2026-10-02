@@ -10,17 +10,13 @@ private/
 runtime/*
 !runtime/.gitkeep
 *.sqlite3
-*.sqlite
 *.db
 *.log
-logs/
 
 # Python
 .venv/
-venv/
 __pycache__/
 *.py[cod]
-*.pyc
 .pytest_cache/
 
 # n8n / exports / credentials
@@ -39,6 +35,3 @@ mempalace/
 Thumbs.db
 .vscode/
 .idea/
-
-# Node
-node_modules/

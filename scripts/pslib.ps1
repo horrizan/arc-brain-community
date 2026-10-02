@@ -1,4 +1,4 @@
-function Get-DotEnvValue {
+﻿function Get-DotEnvValue {
   param([string]$Path,[string]$Name)
   if (!(Test-Path $Path)) { return $null }
   $line = Get-Content $Path | Where-Object { $_ -match ('^' + [regex]::Escape($Name) + '=') } | Select-Object -First 1

@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$SkipBrowserSetup,
   [switch]$InstallMissingPrerequisites
 )
@@ -7,7 +7,7 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 . "$Root\scripts\pslib.ps1"
 
-Write-Host "`nArc Brain Community Edition — guided installer" -ForegroundColor Cyan
+Write-Host "`nArc Brain Community Edition - guided installer" -ForegroundColor Cyan
 Write-Host "This installer keeps services on localhost and leaves outbound email disabled by default.`n"
 
 if ($env:OS -ne 'Windows_NT') { throw 'This alpha installer currently supports Windows 11 only.' }
@@ -32,8 +32,12 @@ if ($missing.Count -gt 0) {
 if ($LASTEXITCODE -ne 0) { throw 'Docker is installed but not running. Start Docker Desktop and re-run install.ps1.' }
 
 try {
-  $pyVersion = & python -c "import sys; print('.'.join(map(str,sys.version_info[:3])))"
-  if ([version]$pyVersion -lt [version]'3.11') { throw "Python $pyVersion is too old; use Python 3.11+." }
+  $pyVersionOutput = (& python --version 2>&1 | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0) { throw "python --version failed with exit code $LASTEXITCODE" }
+  if ($pyVersionOutput -notmatch '(\d+\.\d+(?:\.\d+)?)') { throw "Could not parse Python version from: $pyVersionOutput" }
+  $pyVersion = $Matches[1]
+  if ([version]$pyVersion -lt [version]'3.11.0') { throw "Python $pyVersion is too old; use Python 3.11+." }
+  Write-Host "Python detected: $pyVersion"
 } catch { throw "Python check failed: $($_.Exception.Message)" }
 
 $statePath = "$Root\runtime\install-state.json"

@@ -1,4 +1,4 @@
-param([string]$ApiKey)
+﻿param([string]$ApiKey)
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root

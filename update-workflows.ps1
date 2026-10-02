@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 $Root=Split-Path -Parent $MyInvocation.MyCommand.Path
 $statePath="$Root\runtime\install-state.json"
 if(!(Test-Path $statePath)){throw 'Missing install state. Run finish-setup.ps1 first.'}

@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $envPath = Join-Path $Root '.env'
 if (!(Test-Path $envPath)) { throw 'Missing .env. Run install.ps1.' }

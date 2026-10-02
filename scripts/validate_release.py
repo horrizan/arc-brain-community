@@ -13,10 +13,20 @@ required = [
     "README.md", ".env.example", "config/projects.example.json", "docker/docker-compose.yml",
     "install.ps1", "finish-setup.ps1", "doctor.ps1", "agents/agency-roster.md",
     "INSTALL-ARC-BRAIN.cmd", "CHECK-ARC-BRAIN.cmd", "docs/FIRST-5-MINUTES.md",
+    "docs/RELEASE-CHECKLIST.md",
 ]
 for rel in required:
     if not (ROOT / rel).exists():
         errors.append(f"missing required file: {rel}")
+
+# Internal planning/process files must never be part of a distributable source tree.
+forbidden_paths = {
+    "docs/BUILD-IN-PUBLIC.md",
+    "docs/PUBLIC-LAUNCH-PLAN.md",
+}
+for rel in sorted(forbidden_paths):
+    if (ROOT / rel).exists():
+        errors.append(f"internal-only file present in release tree: {rel}")
 
 for p in ROOT.rglob("*.json"):
     if "runtime" in p.parts:
@@ -32,6 +42,20 @@ for p in (ROOT / "scripts").glob("*.py"):
     except Exception as exc:
         errors.append(f"Python compile failed {p.name}: {exc}")
 
+# Windows PowerShell 5.1 can misread UTF-8-without-BOM smart punctuation.
+# Keep executable PowerShell/CMD sources ASCII-only so parsing is deterministic.
+for pattern in ("*.ps1", "*.cmd"):
+    for p in ROOT.rglob(pattern):
+        try:
+            text = p.read_text(encoding="utf-8-sig")
+        except Exception as exc:
+            errors.append(f"cannot decode script {p.relative_to(ROOT)}: {exc}")
+            continue
+        bad = sorted({ch for ch in text if ord(ch) > 127})
+        if bad:
+            shown = " ".join(f"U+{ord(ch):04X}" for ch in bad[:8])
+            errors.append(f"non-ASCII punctuation/text in executable script {p.relative_to(ROOT)}: {shown}")
+
 workflow_count = 0
 for p in (ROOT / "workflows").glob("*.json"):
     workflow_count += 1
@@ -46,8 +70,6 @@ for p in (ROOT / "workflows").glob("*.json"):
 if workflow_count < 7:
     errors.append(f"expected at least 7 workflows, found {workflow_count}")
 
-
-# Cheap accidental-secret scan for recognizable credential formats rather than field names.
 secret_patterns = [
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
@@ -73,4 +95,4 @@ if errors:
     for e in errors:
         print(" -", e)
     sys.exit(1)
-print(f"Validation passed: {workflow_count} workflows, Python compiled, required files present.")
+print(f"Validation passed: {workflow_count} workflows, Python compiled, required files present, PowerShell/CMD sources are ASCII-safe, and internal planning files are absent.")

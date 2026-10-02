@@ -148,7 +148,7 @@ config/       project configuration templates
 
 This package has static validation and packaging checks, but **v0.1.0 is still an alpha until it has been installed end-to-end on multiple machines**. That is intentional: the public build log should say what is proven, not pretend the first release is production-ready.
 
-See [docs/FIRST-5-MINUTES.md](docs/FIRST-5-MINUTES.md), [STATUS.md](STATUS.md), and [ROADMAP.md](ROADMAP.md).
+See [docs/FIRST-5-MINUTES.md](docs/FIRST-5-MINUTES.md), [STATUS.md](STATUS.md), [ROADMAP.md](ROADMAP.md), and [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
 
 ## Security model
 

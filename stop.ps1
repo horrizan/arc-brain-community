@@ -1,4 +1,4 @@
-param([switch]$StopDocker)
+﻿param([switch]$StopDocker)
 $ErrorActionPreference='Continue'
 $Root=Split-Path -Parent $MyInvocation.MyCommand.Path
 $pidsPath="$Root\runtime\pids.json"

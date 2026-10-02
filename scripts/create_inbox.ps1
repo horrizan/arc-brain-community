@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $configPath = Join-Path $Root 'config\projects.json'
 if (!(Test-Path $configPath)) { throw "Missing $configPath. Run install.ps1 first." }
